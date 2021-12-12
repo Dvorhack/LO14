@@ -81,7 +81,7 @@ case $1 in
     ;;
 
     "-creds")
-        if [ $# -ne 5 ];then sortie "Usage: $0 $1 <ip> <port> </path/to/vsh_dirrectory> <USER>";fi
+        if [ $# -ne 5 ];then sortie "Usage: $0 $1 <ip> <port> </path/to/vsh_dirrectory> <ssh user>";fi
         echo "export VSH_IP=\"$2\"" > creds.sh
         echo "export VSH_PORT=\"$3\"" >> creds.sh
         echo "export VSH_PATH=\"$4\"" >> creds.sh
@@ -99,7 +99,7 @@ case $1 in
         
 Bienvenue dans la commande vsh, gestionnaire d'archive
 Pour commencer, vous devez indiquer l'IP, le PORT et le répertoire du serveur d'archive
-avec la commande: $0 -creds <IP> <PORT> </path/to/directory>
+avec la commande: $0 -creds <IP> <PORT> </path/to/directory> <ssh user>
 
 Les commandes disponibles sont les suivantes:
     -ls: pour lister les archives présentes sur le serveur dans le repertoire indiqué
