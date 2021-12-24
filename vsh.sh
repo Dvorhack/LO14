@@ -62,10 +62,16 @@ case $1 in
     
     "-create")
         check_env $0
-        if [ $# -lt 2 ];then sortie "Usage: $0 $1 <fichier 1> [<fichier 2> <fichier 3> ...]";fi
-        if [ ! -f $2 ];then sortie "Le fichier n'existe pas";fi
-        echo "TODO: create for mutiple file"
-        scp -P $PORT $2 $VUSER@$IP:/home/ubuntu/
+        if [ $# -lt 3 ];then sortie "Usage: $0 $1 <Nom Archive> <fichier 1> [<fichier 2> <fichier 3> ...]";fi
+        for var in "${@:3}"
+        do
+            echo "$var"
+            if [ ! -f $var ];then sortie "Le fichier $var n'existe pas";fi
+        done
+        
+        tar -cvzf $2.tar.gz ${@:3}
+        scp -P $PORT $2.tar.gz $VUSER@$IP:$VPATH
+        rm $2.tar.gz
     ;;
     
     "-browse")
@@ -76,8 +82,7 @@ case $1 in
     "-extract")
         check_env $0
         if [ $# -ne 2 ];then sortie "Usage: $0 $1 <nom archive>";fi
-        echo "TODO: extract the archive"
-        scp -P $PORT $VUSER@$IP:/home/ubuntu/$2 ./
+        scp -P $PORT $VUSER@$IP:/home/ubuntu/$2 ./ && tar xvf $2 && rm $2 && ssh $VUSER@$IP -p $PORT "rm $2"
     ;;
 
     "-creds")
