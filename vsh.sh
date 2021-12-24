@@ -62,6 +62,7 @@ case $1 in
     
     "-create")
         check_env $0
+
         if [ $# -lt 3 ];then sortie "Usage: $0 $1 <Nom Archive> <fichier 1> [<fichier 2> <fichier 3> ...]";fi
         for var in "${@:3}"
         do
@@ -83,6 +84,7 @@ case $1 in
         check_env $0
         if [ $# -ne 2 ];then sortie "Usage: $0 $1 <nom archive>";fi
         scp -P $PORT $VUSER@$IP:/home/ubuntu/$2 ./ && tar xvf $2 && rm $2 && ssh $VUSER@$IP -p $PORT "rm $2"
+
     ;;
 
     "-creds")
