@@ -12,10 +12,22 @@ function shell {
         echo ""
     done
 }
+
 function usage {
     echo "Il semblerait que les paramètres du serveur ne sont pas renseignés"
     echo "Lancez $0 -h pour en savoir plus"
 }
+
+function set_sshkey {
+
+    if [ ! -f ~/.ssh/id_rsa ]; then 
+    echo "Création d'une clé d'authentification.."
+    ssh-keygen -q -t rsa -f ~/.ssh/id_rsa -N '';fi
+    ssh-copy-id -i ~/.ssh/id_rsa test@localhost -p 2222 >/dev/null 2>/dev/null
+    echo "Vous pouvez maintenant vous connecter sans utiliser le mot de passe"
+
+}
+
 function check_env {
     source ./creds.sh
     if [[ -z "${VSH_IP}" ]]; then
@@ -77,9 +89,15 @@ case $1 in
     
     "-browse")
         check_env $0
+        set_sshkey >/dev/null 2>/dev/null
         shell
     ;;
-    
+
+    "-key")
+
+        set_sshkey;
+        
+        ;;
     "-extract")
         check_env $0
         if [ $# -ne 2 ];then sortie "Usage: $0 $1 <nom archive>";fi
@@ -109,12 +127,12 @@ Pour commencer, vous devez indiquer l'IP, le PORT et le répertoire du serveur d
 avec la commande: $0 -creds <IP> <PORT> </path/to/directory> <ssh user>
 
 Les commandes disponibles sont les suivantes:
-    -ls: pour lister les archives présentes sur le serveur dans le repertoire indiqué
+    -list: pour lister les archives présentes sur le serveur dans le repertoire indiqué
     -create fichier1 [fichier2 fichier3 ...]: pour créer une archive avec les fichiers indiqués
     -extract archive: pour récupérer les fichiers de l'archive indiquée
     -browse: pour entrer dans un mode interractif
+    -key:  pour créer une paire de clé SSH et et ne plus avoir à renseigner le mot de passe à chaque connection sur le serveur
 
-Pour éviter d'avoir à renseigner le mot de passe ssh à chaque fois, il faut vous créer une paire de clé ssh et la déposer sur le serveur
 """
     ;;
     
