@@ -20,10 +20,10 @@ function usage {
 
 function set_sshkey {
 
-    if [ ! -f ~/.ssh/id_rsa ]; then 
+    if [ ! -f ~/.ssh/id_rsa.pub ]; then 
     echo "Création d'une clé d'authentification.."
     ssh-keygen -q -t rsa -f ~/.ssh/id_rsa -N '';fi
-    ssh-copy-id -i ~/.ssh/id_rsa test@localhost -p 2222 >/dev/null 2>/dev/null
+    ssh-copy-id -i ~/.ssh/id_rsa.pub -p $PORT $VUSER@$IP  
     echo "Vous pouvez maintenant vous connecter sans utiliser le mot de passe"
 
 }
@@ -78,7 +78,7 @@ case $1 in
         if [ $# -lt 3 ];then sortie "Usage: $0 $1 <Nom Archive> <fichier 1> [<fichier 2> <fichier 3> ...]";fi
         for var in "${@:3}"
         do
-            echo "$var"
+            #echo "$var"
             if [ ! -f $var ];then sortie "Le fichier $var n'existe pas";fi
         done
         
@@ -89,19 +89,18 @@ case $1 in
     
     "-browse")
         check_env $0
-        set_sshkey >/dev/null 2>/dev/null
         shell
     ;;
 
     "-key")
-
-        set_sshkey;
+        check_env $0
+        set_sshkey
         
         ;;
     "-extract")
         check_env $0
         if [ $# -ne 2 ];then sortie "Usage: $0 $1 <nom archive>";fi
-        scp -P $PORT $VUSER@$IP:/home/ubuntu/$2 ./ && tar xvf $2 && rm $2 && ssh $VUSER@$IP -p $PORT "rm $2"
+        scp -P $PORT $VUSER@$IP:$VPATH/$2 ./ && tar xvf $2 && rm $2 && ssh $VUSER@$IP -p $PORT "rm $2"
 
     ;;
 
