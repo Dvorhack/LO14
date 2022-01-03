@@ -4,12 +4,55 @@ function sortie {
     exit 0
 }
 function shell {
+    arch=$(mktemp -d)/$1
+    scp -P $PORT $VUSER@$IP:$VPATH/$1 $arch >/dev/null|| return 0
+    pwd='\'
+    pwd_server="\/"
     while true; do
         echo -n "vsh> "
-        read cmd args
-        if [ "$cmd" == "quit" ];then return 0;fi
-        ssh test@localhost -p 2222 "$cmd $args"
-        echo ""
+        read -r cmd args
+        case $cmd in
+        "quit"|"quit")
+            return 0
+        ;;
+        "pwd")
+            echo $pwd
+        ;;
+        "ls")
+            case $args in
+            "-l")
+                sed -n "/^Directory $pwd_server$/,/@/p" $arch | awk  '{
+                                                            if($2 ~ /^[d]/){print $1"\\"}
+                                                            else if($2 ~ /x/){print $1"*"}
+                                                            else if(length($3) != 0){print $1}}'
+            ;;
+            *)
+                sed -n "/^Directory $pwd_server$/,/@/p" $arch | awk  ' BEGIN {list=""}{
+                                                            if($2 ~ /^[d]/){list=list $1"\\ "}
+                                                            else if($2 ~ /x/){list=list $1"* "}
+                                                            else if(length($3) != 0){list=list $1" "}}
+                                                            END{print list}'
+            ;;
+            esac
+        ;;
+        "cd")
+            [ -z "$args" ] && continue
+            [ "$args" = "\\" ] && { pwd='\';pwd_server="\/"; continue; }
+            [ "$args" = ".." ] && { pwd=$(echo $pwd | sed 's/\\/ /g' | awk '{$NF="";sub(/[ \t]+$/,"")}1')"\\";pwd_server=$(echo $pwd | sed 's/\\/\\\//g'); continue; }
+            
+            chemin=$(sed -n "/^Directory $pwd_server$/,/@/p" $arch | awk  '{if($2 ~ /^[d]/){print $1}}' | grep -w $args)
+            [ -z "$chemin" ] && { echo "Ce dossier n'existe pas"; continue; }
+            pwd=$pwd$chemin"\\"
+            pwd_server=$(echo "$pwd" | sed 's/\\/\\\//g')
+
+        ;;
+        
+        
+        *)
+            echo "Cette commande n'existe pas"
+        ;;
+        esac
+        
     done
 }
 
@@ -124,7 +167,8 @@ case $1 in
     
     "-browse")
         check_env $0
-        shell
+        if [ $# -ne 2 ];then sortie "Usage: $0 $1 <nom archive>";fi
+        shell $2
     ;;
 
     "-key")
