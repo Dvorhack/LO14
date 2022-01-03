@@ -46,6 +46,23 @@ function shell {
             pwd_server=$(echo "$pwd" | sed 's/\\/\\\//g')
 
         ;;
+        "cat")
+            debut=$(sed -n '1p' $arch|awk -F: '{print $2}')
+            #echo $debut
+            sed -n "/^Directory $pwd_server$/,/@/p" $arch | awk  "BEGIN{trouve=0}{
+                if(length(\$3) != 0 && \$2 ~ /^[^d]/){
+                    if(\$1==\"$args\"){
+                        trouve=1
+                        if(\$3==0){print \"Le fichier est vide\"}
+                        else{
+                            body=\"$debut\"
+                            debut=body+\$4-1
+                            system(\"sed -n '\"debut\",\"debut+\$5-1\"p' $arch\")}
+                    }
+                }}
+                END{if(trouve==0){print \"Le fichier n'existe pas\"}}"
+            
+        ;;
         
         
         *)
