@@ -14,7 +14,7 @@ function shell {
 }
 
 function usage {
-    echo "Il semblerait que les paramètres du serveur ne sont pas renseignés"
+    echo "Il semblerait que vous n'ayez pas renseigné la configuration du serveur"
     echo "Lancez $0 -h pour en savoir plus"
 }
 
@@ -29,7 +29,6 @@ function set_sshkey {
 }
 
 function check_env {
-    source ./creds.sh
     if [[ -z "${VSH_IP}" ]]; then
         usage $0
         exit 0
@@ -68,23 +67,59 @@ case $1 in
     
     "-list")
         check_env $0
-        ssh $VUSER@$IP -p $PORT "ls -l"
+        ssh $VUSER@$IP -p $PORT "ls"
          
     ;;
     
     "-create")
         check_env $0
 
-        if [ $# -lt 3 ];then sortie "Usage: $0 $1 <Nom Archive> <fichier 1> [<fichier 2> <fichier 3> ...]";fi
-        for var in "${@:3}"
-        do
-            #echo "$var"
-            if [ ! -f $var ];then sortie "Le fichier $var n'existe pas";fi
-        done
-        
-        tar -cvzf $2.tar.gz ${@:3}
-        scp -P $PORT $2.tar.gz $VUSER@$IP:$VPATH
-        rm $2.tar.gz
+        if [ $# -ne 2 ];then sortie "Usage: $0 $1 <Nom Archive>";fi
+
+        arch=$(mktemp -d)/$2
+
+        ls -lR $(pwd) |sed '/^$/d;/^total/d' |awk "
+            BEGIN{
+                print \"3:3\"
+                print
+                chemin=ENVIRON[\"PWD\"] \"/\" \$0;
+                print(\"Directory \"chemin);
+                nbligne=1
+            }
+            {
+                # Préprocessing de la ligne
+                if(\$1 ~ /^\//){ # Changement de répertoire
+                    chemin=substr(\$1, 1, length(\$1)-1)
+                    chemin=chemin \"/\"
+                }else if(\$1 ~ /^[^d]/){ # Traitement du fichier
+                    system(\"cat \"chemin \$9 \" >> $arch.body\")
+                    \$10=nbligne;
+                    \"wc -l < \" chemin \$9 \"| sed 's/ //g'\"|getline \$11;
+                    nbligne+=\$11
+                    if(\$11==0){\$11=\"\";\$10=\"\"}
+                }
+                
+                # Affichage de la ligne
+                if(length(\$9) != 0){    # Fichier/Dossier dans le répertoire
+                    print \$9,\$1,\$5,\$10,\$11
+                }else{                  # Changement de répertoire
+                    print \"@\";print \"Directory \"chemin
+                }
+            }
+            END{
+                print \"@\"
+                print \"\"
+            }" > $arch
+        nligne=$(wc -l < $arch | sed 's/ //g')
+        nligne=$(($nligne+1))
+        sed -i -e "1s/.*/3:$nligne/" $arch
+        sed -i -e "s/$(echo $PWD | sed 's#/#\\/#g'  )//" $arch
+        cat $arch.body >> $arch
+        #find . -type f -exec cat {} \; >> $arch
+        #cat -n $arch
+        #cat $arch.body
+        scp -P $PORT $arch $VUSER@$IP:$VPATH
+        rm $arch
     ;;
     
     "-browse")
@@ -100,18 +135,29 @@ case $1 in
     "-extract")
         check_env $0
         if [ $# -ne 2 ];then sortie "Usage: $0 $1 <nom archive>";fi
-        scp -P $PORT $VUSER@$IP:$VPATH/$2 ./ && tar xvf $2 && rm $2 && ssh $VUSER@$IP -p $PORT "rm $2"
+        arch=$(mktemp -d)/$2
+        scp -P $PORT $VUSER@$IP:$VPATH/$2 $arch >/dev/null|| exit 0
+        #cat $arch
+        awk "
+        BEGIN{
+            pwd=ENVIRON[\"PWD\"] \$0;
+        }
+        {
+            if(NR==1){body=substr(\$0,3)}
+            else if(NR==body) exit
+            else if(\$1==\"Directory\"){
+                system(\"mkdir \"substr(\$2,2))
+                chemin=pwd\$2
+            }
+            else if(length(\$1) != 0 && \$3==0 ){system(\"touch \"chemin \$1)}
+            else if(length(\$1) != 0 && \$2 ~ /^[-]/ ){
+                debut=body+\$4-1
+                system(\"sed -n '\"debut\",\"debut+\$5-1\"p' $arch > \"chemin \$1)
+            }
+            
+        }
+        " $arch
 
-    ;;
-
-    "-creds")
-        if [ $# -ne 5 ];then sortie "Usage: $0 $1 <ip> <port> </path/to/vsh_dirrectory> <ssh user>";fi
-        echo "export VSH_IP=\"$2\"" > creds.sh
-        echo "export VSH_PORT=\"$3\"" >> creds.sh
-        echo "export VSH_PATH=\"$4\"" >> creds.sh
-        echo "export VSH_USER=\"$5\"" >> creds.sh
-        check_env $0
-        echo "Voici les paramètres renseignés IP=$IP PORT=$PORT PATH=$VPATH USER=$VUSER"
     ;;
 
     "-h")
@@ -122,12 +168,15 @@ case $1 in
  \__/ (____/\_)(_/  (____/(____)(__\_) \__/ (____)(__\_)
         
 Bienvenue dans la commande vsh, gestionnaire d'archive
-Pour commencer, vous devez indiquer l'IP, le PORT et le répertoire du serveur d'archive
-avec la commande: $0 -creds <IP> <PORT> </path/to/directory> <ssh user>
+Pour commencer, vous devez indiquer l'IP, le PORT, le nom d'utilisateur et le répertoire du serveur d'archive en tant que variable globale, voici les commandes associés:
+export VSH_IP=<IP>
+export VSH_PORT=<PORT>
+export VSH_PATH=<répertoire>
+export VSH_USER=<nom d'utilisateur>
 
 Les commandes disponibles sont les suivantes:
-    -list: pour lister les archives présentes sur le serveur dans le repertoire indiqué
-    -create fichier1 [fichier2 fichier3 ...]: pour créer une archive avec les fichiers indiqués
+    -list: pour lister les archives présentes sur le serveur
+    -create archive: pour créer une archive du répertoire courant
     -extract archive: pour récupérer les fichiers de l'archive indiquée
     -browse: pour entrer dans un mode interractif
     -key:  pour créer une paire de clé SSH et et ne plus avoir à renseigner le mot de passe à chaque connection sur le serveur
