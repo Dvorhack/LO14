@@ -38,7 +38,7 @@ function shell {
         "cd")
             [ -z "$args" ] && continue
             [ "$args" = "\\" ] && { pwd='\';pwd_server="\/"; continue; }
-            [ "$args" = ".." ] && { pwd=$(echo $pwd | sed 's/\\/ /g' | awk '{$NF="";sub(/[ \t]+$/,"")}1')"\\";pwd_server=$(echo $pwd | sed 's/\\/\\\//g'); continue; }
+            [ "$args" = ".." ] && { pwd="\\"$(echo $pwd | sed 's/\\/ /g' | awk '{$NF="";sub(/[ \t]+$/,"")}1')"\\"; [ "$pwd" = "\\\\" ] && pwd="\\" ; pwd_server=$(echo $pwd | sed 's/\\/\\\//g'); continue; }
             
             chemin=$(sed -n "/^Directory $pwd_server$/,/@/p" $arch | awk  '{if($2 ~ /^[d]/){print $1}}' | grep -w $args)
             [ -z "$chemin" ] && { echo "Ce dossier n'existe pas"; continue; }
@@ -83,6 +83,7 @@ function shell {
             nligne=$(sed -n '1p' $arch|awk -F: '{print $2}')
             nligne=$((nligne-1))
             sed -i -e "1s/.*/3:$nligne/" $arch
+            scp -P $PORT $arch $VUSER@$IP:$VPATH
             #cat -n $arch
             #cat $arch.bak
         ;;
@@ -95,6 +96,7 @@ function shell {
             nligne=$(sed -n '1p' $arch|awk -F: '{print $2}')
             nligne=$((nligne+1))
             sed -i -e "1s/.*/3:$nligne/" $arch
+            scp -P $PORT $arch $VUSER@$IP:$VPATH
         ;;
         "mkdir")
             body=$(sed -n '1p' $arch|awk -F: '{print $2}')
@@ -109,6 +111,7 @@ function shell {
             nligne=$(sed -n '1p' $arch|awk -F: '{print $2}')
             nligne=$((nligne+3))
             sed -i -e "1s/.*/3:$nligne/" $arch
+            scp -P $PORT $arch $VUSER@$IP:$VPATH
         ;;
         "debug")
             cat -n $arch
@@ -177,7 +180,10 @@ case $1 in
     
     "-list")
         check_env $0
-        ssh $VUSER@$IP -p $PORT "ls"
+        liste=$(ssh $VUSER@$IP -p $PORT "ls")
+        [ -z "$liste" ] && { echo "Il n'y a aucune archive sur le serveur"; exit 0; }
+        echo "Voici les archives présentes sur le serveur:"
+        echo $liste
          
     ;;
     
@@ -185,7 +191,12 @@ case $1 in
         check_env $0
 
         if [ $# -ne 2 ];then sortie "Usage: $0 $1 <Nom Archive>";fi
-
+        if [ -z "$(ls -A .)" ]; then
+            echo "Le dossier courant est vide"
+            exit 0
+        fi
+        exists=$(ssh $VUSER@$IP -p $PORT "ls $2 2>/dev/null")
+        [ ! -z "$exists" ] && { echo "Une archive avec ce nom existe déjà"; exit 0; }
         arch=$(mktemp -d)/$2
 
         ls -lR $(pwd) |sed '/^$/d;/^total/d' |awk "
@@ -228,8 +239,9 @@ case $1 in
         #find . -type f -exec cat {} \; >> $arch
         #cat -n $arch
         #cat $arch.body
-        scp -P $PORT $arch $VUSER@$IP:$VPATH
+        scp -P $PORT $arch $VUSER@$IP:$VPATH > /dev/null
         rm $arch
+        echo "Votre archive $2 a bien été créée"
     ;;
     
     "-browse")
@@ -257,7 +269,7 @@ case $1 in
             if(NR==1){body=substr(\$0,3)}
             else if(NR==body) exit
             else if(\$1==\"Directory\"){
-                system(\"mkdir \"substr(\$2,2))
+                system(\"mkdir \"substr(\$2,2)\" 2>/dev/null\")
                 chemin=pwd\$2
             }
             else if(length(\$1) != 0 && \$3==0 ){system(\"touch \"chemin \$1)}
@@ -268,7 +280,8 @@ case $1 in
             
         }
         " $arch
-
+        ssh $VUSER@$IP -p $PORT "rm $2"
+        echo "L'archive $2 a bien été déployée dans le dossier courant"
     ;;
 
     "-h")
