@@ -12,7 +12,7 @@ function shell {
         echo -n "vsh> "
         read -r cmd args
         case $cmd in
-        "quit"|"quit")
+        "quit"|"exit")
             return 0
         ;;
         "pwd")
@@ -62,6 +62,56 @@ function shell {
                 }}
                 END{if(trouve==0){print \"Le fichier n'existe pas\"}}"
             
+        ;;
+        "rm")
+            body=$(sed -n '1p' $arch|awk -F: '{print $2}')
+            #echo $debut
+            fichier=$(cat -n $arch |sed -n "/Directory $pwd_server$/,/@/p" | sed -n "/$args/p")
+            fichier=(${fichier// / })
+            #echo "${fichier[1]}"
+            [ -z "${fichier[1]}" ] && { echo "Le fichier n'existe pas"; continue; }
+            [[ "${fichier[4]}" == "d*" ]] && { echo "${fichier[1]} est un dossier"; continue; }
+            #deb=$((body+fichier[4]-1}))
+            tmp=mktemp
+            awk "{if(NR>${fichier[0]} && length(\$4) !=0) {\$4-=1};print \$0}" $arch > $tmp && mv $tmp $arch
+            
+            if [ -z "${fichier[4]}" ];then
+                sed -i.bak "${fichier[0]}d" $arch
+            else
+                sed -i.bak "${fichier[0]}d;"$((body+fichier[4]-1))","$((body+fichier[4]+fichier[5]-2))"d" $arch
+            fi
+            nligne=$(sed -n '1p' $arch|awk -F: '{print $2}')
+            nligne=$((nligne-1))
+            sed -i -e "1s/.*/3:$nligne/" $arch
+            #cat -n $arch
+            #cat $arch.bak
+        ;;
+        "touch")
+            body=$(sed -n '1p' $arch|awk -F: '{print $2}')
+            nligne=$(cat -n $arch |sed -n "/Directory $pwd_server$/p"|awk "{print \$1}")
+            nligne=$((nligne+1))
+            tmp=mktemp
+            awk "{if(NR==$nligne) {print \"$args -rw-r--r-- 0\"};print \$0}" $arch > $tmp && mv $tmp $arch
+            nligne=$(sed -n '1p' $arch|awk -F: '{print $2}')
+            nligne=$((nligne+1))
+            sed -i -e "1s/.*/3:$nligne/" $arch
+        ;;
+        "mkdir")
+            body=$(sed -n '1p' $arch|awk -F: '{print $2}')
+            nligne=$(cat -n $arch |sed -n "/Directory $pwd_server$/p"|awk "{print \$1}")
+            nligne=$((nligne+1))
+            tmp=mktemp
+            awk "{if(NR==$nligne) {print \"$args drwxr-xr-x 96\"}
+                else if(NR==$((body-1))) {
+                    print(\"Directory $pwd_server$args/\"); 
+                    print(\"@\")}
+                print \$0}" $arch > $tmp && mv $tmp $arch
+            nligne=$(sed -n '1p' $arch|awk -F: '{print $2}')
+            nligne=$((nligne+3))
+            sed -i -e "1s/.*/3:$nligne/" $arch
+        ;;
+        "debug")
+            cat -n $arch
         ;;
         
         
