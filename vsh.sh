@@ -4,29 +4,33 @@ function sortie {
     exit 0
 }
 function shell {
+    # Copie de l'archive en local pour ne pas avoir à se connecter au server à chaque changement
     arch=$(mktemp -d)/$1
     scp -P $PORT $VUSER@$IP:$VPATH/$1 $arch >/dev/null|| return 0
     pwd='\'
     pwd_server="\/"
+
     while true; do
+        # Récupération de la commande utilisateur
         echo -n "vsh> "
         read -r cmd args
+
         case $cmd in
         "quit"|"exit")
             return 0
         ;;
-        "pwd")
+        "pwd") # Affiche le chemin courant dans l'archive
             echo $pwd
         ;;
-        "ls")
+        "ls") # Affiche les fichiers et dosiers du chemin courant
             case $args in
-            "-l")
+            "-l") # si -l est spécifié, on affiche en liste
                 sed -n "/^Directory $pwd_server$/,/@/p" $arch | awk  '{
                                                             if($2 ~ /^[d]/){print $1"\\"}
                                                             else if($2 ~ /x/){print $1"*"}
                                                             else if(length($3) != 0){print $1}}'
             ;;
-            *)
+            *) # pour tout autre argument, on affiche en ligne
                 sed -n "/^Directory $pwd_server$/,/@/p" $arch | awk  ' BEGIN {list=""}{
                                                             if($2 ~ /^[d]/){list=list $1"\\ "}
                                                             else if($2 ~ /x/){list=list $1"* "}
@@ -35,11 +39,15 @@ function shell {
             ;;
             esac
         ;;
-        "cd")
-            [ -z "$args" ] && continue
+        "cd") # Permet de changer de repertoire courant
+            # Vérification de l'entrée utilisateur
+            [ -z "$args" ] && { echo "Vous n'avez pas renseigné de dossier"; continue; }
+
+            # Traitement particulier pour \ et ..
             [ "$args" = "\\" ] && { pwd='\';pwd_server="\/"; continue; }
             [ "$args" = ".." ] && { pwd="\\"$(echo $pwd | sed 's/\\/ /g' | awk '{$NF="";sub(/[ \t]+$/,"")}1')"\\"; [ "$pwd" = "\\\\" ] && pwd="\\" ; pwd_server=$(echo $pwd | sed 's/\\/\\\//g'); continue; }
             
+            # Vérification si le dossier existe dans le dossier courant
             chemin=$(sed -n "/^Directory $pwd_server$/,/@/p" $arch | awk  '{if($2 ~ /^[d]/){print $1}}' | grep -w $args)
             [ -z "$chemin" ] && { echo "Ce dossier n'existe pas"; continue; }
             pwd=$pwd$chemin"\\"
@@ -48,7 +56,7 @@ function shell {
         ;;
         "cat")
             debut=$(sed -n '1p' $arch|awk -F: '{print $2}')
-            #echo $debut
+            # Récupération du fichier et affichage de son contenu
             sed -n "/^Directory $pwd_server$/,/@/p" $arch | awk  "BEGIN{trouve=0}{
                 if(length(\$3) != 0 && \$2 ~ /^[^d]/){
                     if(\$1==\"$args\"){
@@ -65,41 +73,57 @@ function shell {
         ;;
         "rm")
             body=$(sed -n '1p' $arch|awk -F: '{print $2}')
-            #echo $debut
+
+            # Récupération du fichier s'il existe
             fichier=$(cat -n $arch |sed -n "/Directory $pwd_server$/,/@/p" | sed -n "/$args/p")
             fichier=(${fichier// / })
-            #echo "${fichier[1]}"
+            # S'il n'existe pas ou est un dossier, on part
             [ -z "${fichier[1]}" ] && { echo "Le fichier n'existe pas"; continue; }
             [[ "${fichier[4]}" == "d*" ]] && { echo "${fichier[1]} est un dossier"; continue; }
-            #deb=$((body+fichier[4]-1}))
-            tmp=mktemp
-            awk "{if(NR>${fichier[0]} && length(\$4) !=0) {\$4-=1};print \$0}" $arch > $tmp && mv $tmp $arch
+
             
+            
+            # Vérification si le fichier est vide
             if [ -z "${fichier[4]}" ];then
+                # S'il est vide, on supprime juste sa ligne dans le header
                 sed -i.bak "${fichier[0]}d" $arch
             else
+                # S'il n'est pas vide, on supprime sa ligne dans le header et son contenu dans le body
                 sed -i.bak "${fichier[0]}d;"$((body+fichier[4]-1))","$((body+fichier[4]+fichier[5]-2))"d" $arch
+                # Décalage de tous les fichiers situés après ce lui à supprimer
+                tmp=mktemp
+                awk "{if(NR>${fichier[0]} && length(\$4) !=0) {\$4-=${fichier[5]}};print \$0}" $arch > $tmp && mv $tmp $arch
             fi
+
+            # Mise à jour de la première ligne (offset header, offset body)
             nligne=$(sed -n '1p' $arch|awk -F: '{print $2}')
             nligne=$((nligne-1))
             sed -i -e "1s/.*/3:$nligne/" $arch
+
+            # Mise à jour de l'archive sur le serveur
             scp -P $PORT $arch $VUSER@$IP:$VPATH
-            #cat -n $arch
-            #cat $arch.bak
         ;;
         "touch")
             body=$(sed -n '1p' $arch|awk -F: '{print $2}')
+
+            # Ajout du fichier dans l'archive
             nligne=$(cat -n $arch |sed -n "/Directory $pwd_server$/p"|awk "{print \$1}")
             nligne=$((nligne+1))
             tmp=mktemp
             awk "{if(NR==$nligne) {print \"$args -rw-r--r-- 0\"};print \$0}" $arch > $tmp && mv $tmp $arch
+
+            # Mise à jour de la première ligne (offset header, offset body)
             nligne=$(sed -n '1p' $arch|awk -F: '{print $2}')
             nligne=$((nligne+1))
             sed -i -e "1s/.*/3:$nligne/" $arch
+
+            # Mise à jour de l'archive sur le serveur
             scp -P $PORT $arch $VUSER@$IP:$VPATH
         ;;
         "mkdir")
             body=$(sed -n '1p' $arch|awk -F: '{print $2}')
+
+            # Ajout du fichier dans l'archive
             nligne=$(cat -n $arch |sed -n "/Directory $pwd_server$/p"|awk "{print \$1}")
             nligne=$((nligne+1))
             tmp=mktemp
@@ -108,9 +132,13 @@ function shell {
                     print(\"Directory $pwd_server$args/\"); 
                     print(\"@\")}
                 print \$0}" $arch > $tmp && mv $tmp $arch
+
+            # Mise à jour de la première ligne (offset header, offset body)
             nligne=$(sed -n '1p' $arch|awk -F: '{print $2}')
             nligne=$((nligne+3))
             sed -i -e "1s/.*/3:$nligne/" $arch
+
+            # Mise à jour de l'archive sur le serveur
             scp -P $PORT $arch $VUSER@$IP:$VPATH
         ;;
         "debug")
@@ -126,11 +154,13 @@ function shell {
     done
 }
 
+# Fonction appelée si l'utilisateur n'a pas renseigné les paramètres du serveur
 function usage {
     echo "Il semblerait que vous n'ayez pas renseigné la configuration du serveur"
     echo "Lancez $0 -h pour en savoir plus"
 }
 
+# Fonction qui ajoute la clé RSA au serveur
 function set_sshkey {
 
     if [ ! -f ~/.ssh/id_rsa.pub ]; then 
@@ -141,6 +171,7 @@ function set_sshkey {
 
 }
 
+# Fonction qui vérifie si les paramètres du serveur ont été renseignés
 function check_env {
     if [[ -z "${VSH_IP}" ]]; then
         usage $0
@@ -180,7 +211,11 @@ case $1 in
     
     "-list")
         check_env $0
+
+        # Récupération de la liste d'archives
         liste=$(ssh $VUSER@$IP -p $PORT "ls")
+
+        # Vérification si elle est vide
         [ -z "$liste" ] && { echo "Il n'y a aucune archive sur le serveur"; exit 0; }
         echo "Voici les archives présentes sur le serveur:"
         echo $liste
@@ -302,7 +337,7 @@ Les commandes disponibles sont les suivantes:
     -list: pour lister les archives présentes sur le serveur
     -create archive: pour créer une archive du répertoire courant
     -extract archive: pour récupérer les fichiers de l'archive indiquée
-    -browse: pour entrer dans un mode interractif
+    -browse: vous permet de voir et modifier les dossiers et fichiers présents dans une archive
     -key:  pour créer une paire de clé SSH et et ne plus avoir à renseigner le mot de passe à chaque connection sur le serveur
 
 """
