@@ -3,6 +3,59 @@ function sortie {
     echo "ERROR: $1"
     exit 0
 }
+
+# Supprime un dossier
+# $1 -> archive
+# $2 -> chemin courant
+# $3 -> dossier à supprimer
+# $4 -> ligne dossier à supp
+function shell_supp_dossier {
+    decalage=0
+    # Récupération de tous les fichiers contenus dans le dossier à supprimer
+    while read line ; do
+        fichier=(${line// / })
+        #echo "=== $line ==="
+
+        # Verification si dossier
+        if [[ ${fichier[2]} == d* ]];then
+            shell_supp_dossier $1 "$2$3\/" ${fichier[1]} ${fichier[0]}
+            decalage=$?
+
+
+        # Vérification si le fichier est vide
+        elif [ -z "${fichier[4]}" ];then
+            # S'il est vide, on supprime juste sa ligne dans le header
+            sed -i.bak "${fichier[0]}d" $1
+            decalage=$((decalage+1))
+        else
+            # S'il n'est pas vide, on supprime sa ligne dans le header et son contenu dans le body
+            #sed -i.bak "${fichier[0]}d;"$((body+fichier[4]-1))","$((body+fichier[4]+fichier[5]-2))"d" $arch
+            # Décalage de tous les fichiers situés après ce lui à supprimer
+            #tmp=mktemp
+            #awk "{if(NR>${fichier[0]} && length(\$4) !=0) {\$4-=${fichier[5]}};print \$0}" $arch > $tmp && mv $tmp $arch
+            shell_supp_fichier ${fichier[0]} ${fichier[4]} ${fichier[5]}
+            decalage=$((decalage+1))
+        fi 
+    done <<<$(cat -n $1 |awk "/Directory $2$3\/$/{flag=1; next} /@/{flag=0} flag")
+    sed -i -e "/Directory $2$3\/$/,/@/d"  $1
+    sed -i.bak "$4d" $1
+    decalage=$((decalage+3))
+
+    return $decalage
+}
+
+# Supprime un fichier dans l'archive
+# $1 -> Ligne du fichier à supprimer
+# $2 -> Offset du fichier dans le body
+# $3 -> Nombre de ligne du fichier dans le body
+function shell_supp_fichier {
+    # S'il n'est pas vide, on supprime sa ligne dans le header et son contenu dans le body
+    sed -i.bak "$1d;"$((body+$2-1))","$((body+$2+$3-2))"d" $arch
+    # Décalage de tous les fichiers situés après ce lui à supprimer
+    tmp=mktemp
+    awk "{if(NR>$1 && length(\$4) !=0) {\$4-=$3};print \$0}" $arch > $tmp && mv $tmp $arch
+}
+
 function shell {
     # Copie de l'archive en local pour ne pas avoir à se connecter au server à chaque changement
     arch=$(mktemp -d)/$1
@@ -79,32 +132,53 @@ function shell {
             fichier=(${fichier// / })
             # S'il n'existe pas ou est un dossier, on part
             [ -z "${fichier[1]}" ] && { echo "Le fichier n'existe pas"; continue; }
-            [[ "${fichier[4]}" == "d*" ]] && { echo "${fichier[1]} est un dossier"; continue; }
+            
 
             
+            # Variable qui compte le nombre de lignes enlevées
+            decalage=0
+
+            # Verification si c'est un dossier
             
+            if [[ ${fichier[2]} == d* ]];then
+                # Suppression de la ligne dans le dossier actuel
+                #sed -i.bak "${fichier[0]}d" $arch
+                #decalage=$((decalage+1))
+                shell_supp_dossier $arch $pwd_server $args ${fichier[0]}
+                decalage=$?
+
+                
+                
             # Vérification si le fichier est vide
-            if [ -z "${fichier[4]}" ];then
+            elif [ -z "${fichier[4]}" ];then
                 # S'il est vide, on supprime juste sa ligne dans le header
                 sed -i.bak "${fichier[0]}d" $arch
+                decalage=$((decalage+1))
             else
                 # S'il n'est pas vide, on supprime sa ligne dans le header et son contenu dans le body
-                sed -i.bak "${fichier[0]}d;"$((body+fichier[4]-1))","$((body+fichier[4]+fichier[5]-2))"d" $arch
+                #sed -i.bak "${fichier[0]}d;"$((body+fichier[4]-1))","$((body+fichier[4]+fichier[5]-2))"d" $arch
                 # Décalage de tous les fichiers situés après ce lui à supprimer
-                tmp=mktemp
-                awk "{if(NR>${fichier[0]} && length(\$4) !=0) {\$4-=${fichier[5]}};print \$0}" $arch > $tmp && mv $tmp $arch
+                #tmp=mktemp
+                #awk "{if(NR>${fichier[0]} && length(\$4) !=0) {\$4-=${fichier[5]}};print \$0}" $arch > $tmp && mv $tmp $arch
+                shell_supp_fichier ${fichier[0]} ${fichier[4]} ${fichier[5]}
+                decalage=$((decalage+1))
             fi
 
             # Mise à jour de la première ligne (offset header, offset body)
             nligne=$(sed -n '1p' $arch|awk -F: '{print $2}')
-            nligne=$((nligne-1))
+            nligne=$((nligne-decalage))
             sed -i -e "1s/.*/3:$nligne/" $arch
 
             # Mise à jour de l'archive sur le serveur
-            scp -P $PORT $arch $VUSER@$IP:$VPATH
+            scp -P $PORT $arch $VUSER@$IP:$VPATH > /dev/null
         ;;
         "touch")
             body=$(sed -n '1p' $arch|awk -F: '{print $2}')
+
+            # Vérification si un fichier / dossier avec ce nom existe
+            fichier=$(cat -n $arch |sed -n "/Directory $pwd_server$/,/@/p" | sed -n "/$args/p")
+            fichier=(${fichier// / })
+            [ ! -z "${fichier[1]}" ] && { echo "Un fichier ou dossier avec le nom existe déjà"; continue; }
 
             # Ajout du fichier dans l'archive
             nligne=$(cat -n $arch |sed -n "/Directory $pwd_server$/p"|awk "{print \$1}")
@@ -118,7 +192,7 @@ function shell {
             sed -i -e "1s/.*/3:$nligne/" $arch
 
             # Mise à jour de l'archive sur le serveur
-            scp -P $PORT $arch $VUSER@$IP:$VPATH
+            scp -P $PORT $arch $VUSER@$IP:$VPATH > /dev/null
         ;;
         "mkdir")
             body=$(sed -n '1p' $arch|awk -F: '{print $2}')
@@ -139,7 +213,7 @@ function shell {
             sed -i -e "1s/.*/3:$nligne/" $arch
 
             # Mise à jour de l'archive sur le serveur
-            scp -P $PORT $arch $VUSER@$IP:$VPATH
+            scp -P $PORT $arch $VUSER@$IP:$VPATH > /dev/null
         ;;
         "debug")
             cat -n $arch
